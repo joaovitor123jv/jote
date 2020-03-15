@@ -5,6 +5,9 @@
 /* INCLUDES */
 #include <ctype.h>
 #include <errno.h>
+
+#include <fcntl.h>
+
 #include <stdio.h>
 #include <stdarg.h>
 #include <stdlib.h>
@@ -80,7 +83,7 @@ void editorAppendRow(char *line, size_t lineLength) {
 	editor.numRows++;
 }
 
-void editorRowInsertChar(EditorRow *row, int at, int character) {
+void editorRowInsertCharacter(EditorRow *row, int at, int character) {
 	if(at < 0 || at > row->size) {
 		at = row->size;
 	}
@@ -93,9 +96,39 @@ void editorRowInsertChar(EditorRow *row, int at, int character) {
 }
 
 /* EDITOR OPERATIONS */
-
+void editorInsertCharacter(int character) {
+	if(editor.cursorY == editor.numRows) {
+		editorAppendRow("", 0);
+	}
+	editorRowInsertCharacter(&editor.row[editor.cursorY], editor.cursorX, character);
+	editor.cursorX++;
+}
 
 /* FILE I/O */
+
+char *editorRowsToString(int *bufferLength) {
+	int textLength = 0;
+	int iterator;
+	
+	// count the size of the future file text
+	for(iterator = 0; iterator < editor.numRows; iterator++) {
+		textLength += editor.row[iterator].size + 1; // +1 cause of the \n at the line end
+	}
+	*bufferLength = textLength;
+	
+	char *buffer = malloc(textLength);
+	char *p = buffer;
+	
+	// Copy the editor buffer text to another buffer adding '\n' at the end of each line
+	for(iterator = 0; iterator < editor.numRows; iterator++) {
+		memcpy(p, editor.row[iterator].characters, editor.row[iterator].size);
+		p += editor.row[iterator].size;
+		*p = '\n';
+		p++;
+	}
+	
+	return buffer;
+}
 
 void editorOpen(const char *fileName) {
 	FILE *fp = fopen(fileName, "r");
@@ -119,6 +152,29 @@ void editorOpen(const char *fileName) {
 
 	free(line);
 	fclose(fp);
+}
+
+void editorSave() {
+	if(editor.fileName == NULL) {
+		return;
+	} else {
+		int length;
+		char *buffer = editorRowsToString(&length);
+		
+		int fd = open(editor.fileName, O_RDWR | O_CREAT, 0644);
+		
+		if(fd != -1) {
+			if(ftruncate(fd, length) != -1) {
+				if(write(fd, buffer, length) == length) {
+					close(fd);
+					free(buffer);
+					return;
+				}
+			}
+			close(fd);
+		}
+		free(buffer);
+	}
 }
 
 void editorBuffer_append(struct EditorBuffer *eb, const char *string, int length) {
@@ -334,10 +390,18 @@ void editorProcessKeypress() {
 	int character = editorReadKey();
 
 	switch(character) {
+		case '\r':
+			/* TODO */
+			break;
+	
 		case CTRL_KEY('q'):
 			write(STDOUT_FILENO, "\x1b[2J", 4); // Clear the entire screen
 			write(STDOUT_FILENO, "\x1b[H", 3); // Position the cursor on top of the screen
 			exit(0);
+			break;
+
+		case CTRL_KEY('s'):
+			editorSave();
 			break;
 
 		case ARROW_UP:
@@ -373,6 +437,20 @@ void editorProcessKeypress() {
 			if(editor.cursorY < editor.numRows) {
 				editor.cursorX = editor.row[editor.cursorY].size;
 			}
+			break;
+
+		case BACKSPACE:
+		case CTRL_KEY('h'):
+		case DEL_KEY:
+			/* TODO */
+			break;
+
+		case CTRL_KEY('l'):
+		case '\x1b':
+			break;
+
+		default:
+			editorInsertCharacter(character);
 			break;
 	}
 }

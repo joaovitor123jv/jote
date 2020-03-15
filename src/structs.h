@@ -3,6 +3,7 @@
 #define JOTE_VERSION "0.0.1"
 
 #define TAB_SIZE 4
+#define QUIT_TIMES 4
 
 #define CTRL_KEY(k) ((k) & 0x1f)
 
@@ -37,6 +38,7 @@ struct EditorConfig {
 	int screenRows;
 	int screenCols;
 	int numRows;
+	int isTextModified;
 	EditorRow *row;
 	char *fileName;
 	char statusMessage[80];

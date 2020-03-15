@@ -22,6 +22,9 @@
 
 #include "terminal_operations.h"
 
+/* PROTOTYPES */
+
+void editorSetStatusMessage(const char *format, ...);
 
 /* ROW OPERATIONS */
 int calculateRenderedX(EditorRow *row, int cursorX) {
@@ -81,6 +84,7 @@ void editorAppendRow(char *line, size_t lineLength) {
 	editorUpdateRow(&editor.row[editor.numRows]);
 
 	editor.numRows++;
+	editor.isTextModified = 1;
 }
 
 void editorRowInsertCharacter(EditorRow *row, int at, int character) {
@@ -93,6 +97,7 @@ void editorRowInsertCharacter(EditorRow *row, int at, int character) {
 	row->size++;
 	row->characters[at] = character;
 	editorUpdateRow(row);
+	editor.isTextModified = 1;
 }
 
 /* EDITOR OPERATIONS */
@@ -152,6 +157,7 @@ void editorOpen(const char *fileName) {
 
 	free(line);
 	fclose(fp);
+	editor.isTextModified = 0;
 }
 
 void editorSave() {
@@ -168,12 +174,15 @@ void editorSave() {
 				if(write(fd, buffer, length) == length) {
 					close(fd);
 					free(buffer);
+					editor.isTextModified = 0;
+					editorSetStatusMessage("%d bytes written to the file", length);
 					return;
 				}
 			}
 			close(fd);
 		}
 		free(buffer);
+		editorSetStatusMessage("Can\'t save! I/O error: %s", strerror(errno));
 	}
 }
 
@@ -275,7 +284,14 @@ void editorDrawStatusBar(struct EditorBuffer *eb) {
 	char status[80];
 	char rightStatus[80];
 
-	length = snprintf(status, sizeof(status), "%.20s - %d lines", editor.fileName ? editor.fileName : "<New File>", editor.numRows);
+	length = snprintf(
+		status, 
+		sizeof(status), 
+		"%.20s - %d lines %s", 
+		editor.fileName ? editor.fileName : "<New File>", 
+		editor.numRows,
+		editor.isTextModified ? "(modified)" : ""
+	);
 	rightLength = snprintf(rightStatus, sizeof(rightStatus), "(%d,%d)", editor.cursorX + 1, editor.cursorY + 1);
 
 	if(length > editor.screenCols) {
@@ -387,6 +403,7 @@ void editorMoveCursor(int key) {
 }
 
 void editorProcessKeypress() {
+	static int quitTimes = QUIT_TIMES;
 	int character = editorReadKey();
 
 	switch(character) {
@@ -395,6 +412,13 @@ void editorProcessKeypress() {
 			break;
 	
 		case CTRL_KEY('q'):
+			if(editor.isTextModified && quitTimes > 0) {
+				editorSetStatusMessage("WARNING: There are unsaved changes in file"
+					"Press Ctrl-Q %d more times to quit.", quitTimes
+				);
+				quitTimes--;
+				return;
+			}
 			write(STDOUT_FILENO, "\x1b[2J", 4); // Clear the entire screen
 			write(STDOUT_FILENO, "\x1b[H", 3); // Position the cursor on top of the screen
 			exit(0);
@@ -453,6 +477,8 @@ void editorProcessKeypress() {
 			editorInsertCharacter(character);
 			break;
 	}
+	
+	quitTimes = QUIT_TIMES;
 }
 
 
@@ -464,6 +490,7 @@ void initEditor() {
 	editor.rowOffset = 0;
 	editor.colOffset = 0;
 	editor.numRows = 0;
+	editor.isTextModified = 0;
 	editor.row = NULL;
 	editor.fileName = NULL;
 	editor.statusMessage[0] = '\0';
@@ -483,17 +510,10 @@ int main(int argc, char *argv[]) {
 		editorOpen(argv[1]);
 	}
 
-	editorSetStatusMessage("Help: Press Ctrl-Q to quit the editor");
+	editorSetStatusMessage("Help: Press Ctrl-Q to quit | Ctrl-S to save");
 
 	while(1) {
 		editorRefreshScreen();
 		editorProcessKeypress();
-		/*
-		   if(iscntrl(character)) { // Is a non-printable caracter ?
-		   printf("%d\r\n", character);
-		   } else { // Is a printable character
-		   printf("%d ('%c')\r\n", character, character);
-		   }
-		   */
 	}
 }
